@@ -1,13 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    'Missing Supabase environment variables. Check .env.local and ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set.'
-  )
-}
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://eviextxzpsnuxgvjauek.supabase.co'
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_31vyIJFSRalyjBgc69DjKg_44MHXNc3'
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
