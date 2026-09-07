@@ -1,464 +1,628 @@
 "use client"
 
 import * as React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
-import { setSession, getSession, type UserRole } from "@/lib/session"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent } from "@/components/ui/card"
 import {
-  Scale,
-  Factory,
-  Warehouse,
   Recycle,
-  CheckCircle2,
+  ArrowRight,
+  Warehouse,
+  Factory,
+  ShieldCheck,
   Banknote,
   FileCheck,
   Globe,
-  Loader2,
-  ArrowRight,
-  ShieldCheck,
-  ChevronDown,
+  CheckCircle2,
+  TrendingUp,
+  Leaf,
+  ChevronRight,
+  Menu,
+  X,
+  Sparkles,
+  Scale,
+  Building2,
+  BarChart3,
+  Zap,
+  Star,
+  Award,
 } from "lucide-react"
 
-interface Facility {
-  id: string
-  name: string
-  location: string
-  type: "Aggregator" | "Formal Recycler"
-  pin?: string
-}
+// ── Animated Counter ─────────────────────────────────────────────────
+function AnimatedCounter({ target, suffix = "", prefix = "" }: { target: number; suffix?: string; prefix?: string }) {
+  const [count, setCount] = useState(0)
+  const ref = useRef<HTMLSpanElement>(null)
+  const started = useRef(false)
 
-const DEMO_FACILITIES: Facility[] = [
-  {
-    id: "agg-001",
-    name: "Karol Bagh Scrap Aggregators",
-    location: "Karol Bagh, New Delhi",
-    type: "Aggregator",
-    pin: "1234",
-  },
-  {
-    id: "agg-002",
-    name: "Dharavi Metal Co-op",
-    location: "Dharavi, Mumbai",
-    type: "Aggregator",
-    pin: "1234",
-  },
-  {
-    id: "rec-001",
-    name: "Hindalco Primary Smelter",
-    location: "Sriperumbudur, Tamil Nadu",
-    type: "Formal Recycler",
-    pin: "1234",
-  },
-  {
-    id: "rec-002",
-    name: "Gujarat Copper & Metals Ltd",
-    location: "Dahej, Gujarat",
-    type: "Formal Recycler",
-    pin: "1234",
-  },
-  {
-    id: "rec-003",
-    name: "Hindustan Copper Smelting Complex",
-    location: "Khetri, Rajasthan",
-    type: "Formal Recycler",
-    pin: "1234",
-  },
-]
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !started.current) {
+          started.current = true
+          const duration = 1800
+          const start = Date.now()
+          const tick = () => {
+            const elapsed = Date.now() - start
+            const progress = Math.min(elapsed / duration, 1)
+            const ease = 1 - Math.pow(1 - progress, 3)
+            setCount(Math.round(ease * target))
+            if (progress < 1) requestAnimationFrame(tick)
+          }
+          requestAnimationFrame(tick)
+        }
+      },
+      { threshold: 0.5 }
+    )
+    if (ref.current) observer.observe(ref.current)
+    return () => observer.disconnect()
+  }, [target])
+
+  return (
+    <span ref={ref}>
+      {prefix}{count.toLocaleString("en-IN")}{suffix}
+    </span>
+  )
+}
 
 export default function HomePage() {
   const router = useRouter()
-  const [selectedRole, setSelectedRole] = useState<UserRole | null>("Aggregator")
-  const [facilities, setFacilities] = useState<Facility[]>([])
-  const [loadingFacilities, setLoadingFacilities] = useState<boolean>(true)
-  const [selectedFacilityId, setSelectedFacilityId] = useState<string>("")
-  const [code, setCode] = useState<string>("")
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState<boolean>(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
 
-  // Fetch facilities for the chosen role
   useEffect(() => {
-    if (!selectedRole) return
-
-    let isMounted = true
-    setLoadingFacilities(true)
-    setErrorMessage(null)
-
-    async function loadFacilities() {
-      const dbType = selectedRole === "Aggregator" ? "Aggregator" : "Formal Recycler"
-
-      try {
-        const { data, error } = await supabase
-          .from("facilities")
-          .select("id, name, location, type, pin")
-          .eq("type", dbType)
-          .order("name")
-
-        if (!error && data && data.length > 0) {
-          if (isMounted) {
-            setFacilities(data as Facility[])
-            setSelectedFacilityId(data[0].id)
-          }
-        } else {
-          const filteredFallback = DEMO_FACILITIES.filter((f) => f.type === dbType)
-          if (isMounted) {
-            setFacilities(filteredFallback)
-            setSelectedFacilityId(filteredFallback[0].id)
-          }
-        }
-      } catch {
-        const filteredFallback = DEMO_FACILITIES.filter((f) => f.type === dbType)
-        if (isMounted) {
-          setFacilities(filteredFallback)
-          setSelectedFacilityId(filteredFallback[0].id)
-        }
-      } finally {
-        if (isMounted) setLoadingFacilities(false)
-      }
-    }
-
-    loadFacilities()
-    return () => {
-      isMounted = false
-    }
-  }, [selectedRole])
-
-  const handleRoleClick = (role: UserRole) => {
-    setSelectedRole(role)
-    setCode("")
-    setErrorMessage(null)
-  }
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErrorMessage(null)
-
-    if (!selectedRole) {
-      setErrorMessage("Please select a center or plant.")
-      return
-    }
-
-    if (!selectedFacilityId) {
-      setErrorMessage("Please select your facility.")
-      return
-    }
-
-    if (!code || code.length < 4) {
-      setErrorMessage("Please enter your 4-digit code.")
-      return
-    }
-
-    setSubmitting(true)
-
-    try {
-      let facilityMatch: Facility | undefined
-
-      try {
-        const { data, error } = await supabase
-          .from("facilities")
-          .select("*")
-          .eq("id", selectedFacilityId)
-          .maybeSingle()
-
-        if (!error && data) {
-          facilityMatch = data as Facility
-        }
-      } catch {
-        // Fall back to local list
-      }
-
-      if (!facilityMatch) {
-        facilityMatch = facilities.find((f) => f.id === selectedFacilityId)
-      }
-
-      if (!facilityMatch) {
-        setErrorMessage("Facility not found, try again.")
-        setSubmitting(false)
-        return
-      }
-
-      const expectedPin = facilityMatch.pin || "1234"
-      if (code !== expectedPin) {
-        setErrorMessage("That code doesn't match, try again.")
-        setSubmitting(false)
-        return
-      }
-
-      // Save session in localStorage
-      setSession({
-        facilityId: facilityMatch.id,
-        facilityName: facilityMatch.name,
-        role: selectedRole,
-      })
-
-      // Redirect directly to destination
-      if (selectedRole === "Aggregator") {
-        router.push("/pos")
-      } else {
-        router.push("/recycler")
-      }
-    } catch {
-      setErrorMessage("That code doesn't match, try again.")
-      setSubmitting(false)
-    }
-  }
+    const onScroll = () => setScrolled(window.scrollY > 20)
+    window.addEventListener("scroll", onScroll)
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [])
 
   return (
-    <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col font-sans">
-      {/* 1. Simple Header */}
-      <header className="border-b border-stone-200 bg-white/95 backdrop-blur sticky top-0 z-30 px-4 py-3.5 sm:px-8">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="text-xl font-black tracking-tight text-stone-900">
-              Dhatu Setu
-            </span>
-            <span className="text-xs text-stone-600 bg-stone-100 border border-stone-200 px-2.5 py-0.5 rounded-full font-medium">
-              Ministry of Mines
-            </span>
-          </div>
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans overflow-x-hidden">
 
-          <Link
-            href="/dashboard"
-            className="text-xs text-stone-500 hover:text-stone-900 font-medium flex items-center gap-1 transition-colors"
-          >
-            <span>Official Dashboard</span>
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+      {/* ── Sticky Navbar ──────────────────────────────────────────────── */}
+      <header
+        className={`sticky top-0 z-50 w-full transition-all duration-300 ${
+          scrolled
+            ? "bg-white/95 backdrop-blur-md shadow-sm border-b border-slate-200/80"
+            : "bg-transparent"
+        }`}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            {/* Logo */}
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 shadow-md">
+                <Recycle className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex flex-col leading-tight">
+                <span className="text-lg font-black tracking-tight text-slate-900">
+                  Dhatu<span className="text-emerald-600">Setu</span>
+                </span>
+                <span className="text-[10px] text-slate-500 font-medium -mt-0.5 tracking-wider uppercase">
+                  Ministry of Mines
+                </span>
+              </div>
+            </div>
+
+            {/* Desktop Nav */}
+            <nav className="hidden md:flex items-center gap-7">
+              <a href="#features" className="text-sm font-medium text-slate-600 hover:text-emerald-700 transition-colors">
+                Features
+              </a>
+              <a href="#how-it-works" className="text-sm font-medium text-slate-600 hover:text-emerald-700 transition-colors">
+                How It Works
+              </a>
+              <a href="#impact" className="text-sm font-medium text-slate-600 hover:text-emerald-700 transition-colors">
+                Impact
+              </a>
+              <Link href="/dashboard" className="text-sm font-medium text-slate-600 hover:text-emerald-700 transition-colors">
+                MoM Dashboard
+              </Link>
+            </nav>
+
+            {/* CTA */}
+            <div className="hidden md:flex items-center gap-3">
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-sm font-bold shadow-md shadow-emerald-500/25 hover:shadow-lg hover:shadow-emerald-500/35 hover:from-emerald-500 hover:to-teal-500 transition-all duration-200 active:scale-95"
+              >
+                <span>Sign In</span>
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            {/* Mobile Menu Button */}
+            <button
+              className="md:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              aria-label="Toggle menu"
+            >
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+          </div>
         </div>
+
+        {/* Mobile Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden bg-white border-t border-slate-200 px-4 py-4 space-y-3 animate-slide-down">
+            <a href="#features" className="block text-sm font-medium text-slate-700 py-2">Features</a>
+            <a href="#how-it-works" className="block text-sm font-medium text-slate-700 py-2">How It Works</a>
+            <a href="#impact" className="block text-sm font-medium text-slate-700 py-2">Impact</a>
+            <Link href="/dashboard" className="block text-sm font-medium text-slate-700 py-2">MoM Dashboard</Link>
+            <Link
+              href="/login"
+              className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-sm font-bold"
+            >
+              Sign In <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        )}
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-8 sm:py-12 flex flex-col justify-center gap-8">
-        {/* 2. Hero Section (Plain language, two sentences total) */}
-        <section className="text-center space-y-3">
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-stone-900 leading-tight">
-            Turn scrap into instant payment — and an official record.
-          </h1>
-          <p className="text-base sm:text-lg text-stone-600 max-w-2xl mx-auto leading-relaxed">
-            Weigh it, log it, get paid. Every kilo counts towards your digital income history.
-          </p>
-        </section>
+      {/* ── Hero Section ───────────────────────────────────────────────── */}
+      <section className="relative hero-gradient overflow-hidden">
+        {/* Background Orbs */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/4 -left-24 w-96 h-96 rounded-full bg-emerald-500/10 blur-3xl" />
+          <div className="absolute bottom-1/4 -right-24 w-96 h-96 rounded-full bg-teal-500/10 blur-3xl" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-emerald-900/20 blur-3xl" />
+        </div>
 
-        {/* 3. Role Selection Cards + Inline Expansion */}
-        <section className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Card 1: Collection Center */}
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => handleRoleClick("Aggregator")}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") handleRoleClick("Aggregator")
-              }}
-              className={`cursor-pointer transition-all duration-200 rounded-xl border p-5 flex flex-col justify-between gap-3 text-left outline-none ${
-                selectedRole === "Aggregator"
-                  ? "border-green-700 bg-green-50/80 ring-2 ring-green-600 shadow-sm"
-                  : "border-stone-200 bg-white hover:border-stone-300 hover:bg-stone-50 text-stone-600 shadow-sm"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div
-                  className={`p-2.5 rounded-lg border ${
-                    selectedRole === "Aggregator"
-                      ? "bg-green-100 border-green-300 text-green-800"
-                      : "bg-stone-100 border-stone-200 text-stone-600"
-                  }`}
-                >
-                  <Warehouse className="h-6 w-6" />
-                </div>
-                {selectedRole === "Aggregator" && (
-                  <CheckCircle2 className="h-5 w-5 text-green-700" />
-                )}
-              </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-bold text-stone-900">
-                  I run a Collection Center
-                </h3>
-                <p className="text-xs sm:text-sm text-stone-500 mt-1 leading-relaxed">
-                  Weigh scrap, pay collectors, send it to a recycler.
-                </p>
-              </div>
+        {/* Grid Pattern */}
+        <div
+          className="absolute inset-0 opacity-[0.04]"
+          style={{
+            backgroundImage: "linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)",
+            backgroundSize: "48px 48px",
+          }}
+        />
+
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 sm:py-32 lg:py-40">
+          <div className="text-center space-y-8">
+            {/* Badge */}
+            <div className="animate-fade-up inline-flex items-center gap-2 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-4 py-1.5 text-xs font-semibold text-emerald-300 tracking-wider uppercase">
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>Critical Mineral Traceability Network</span>
             </div>
 
-            {/* Card 2: Recycling Plant */}
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => handleRoleClick("Recycler")}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") handleRoleClick("Recycler")
-              }}
-              className={`cursor-pointer transition-all duration-200 rounded-xl border p-5 flex flex-col justify-between gap-3 text-left outline-none ${
-                selectedRole === "Recycler"
-                  ? "border-green-700 bg-green-50/80 ring-2 ring-green-600 shadow-sm"
-                  : "border-stone-200 bg-white hover:border-stone-300 hover:bg-stone-50 text-stone-600 shadow-sm"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div
-                  className={`p-2.5 rounded-lg border ${
-                    selectedRole === "Recycler"
-                      ? "bg-green-100 border-green-300 text-green-800"
-                      : "bg-stone-100 border-stone-200 text-stone-600"
-                  }`}
-                >
-                  <Factory className="h-6 w-6" />
+            {/* Headline */}
+            <h1 className="animate-fade-up-delay-1 text-4xl sm:text-5xl lg:text-7xl font-black tracking-tight text-white leading-[1.08]">
+              Turning Scrap into{" "}
+              <span className="shimmer-text">Certified Value</span>
+            </h1>
+
+            {/* Subtext */}
+            <p className="animate-fade-up-delay-2 text-lg sm:text-xl text-slate-300 max-w-2xl mx-auto leading-relaxed">
+              India&apos;s first end-to-end platform connecting informal Kabadiwala collectors, Aggregator godowns,
+              and formal Recycling plants — verified by the Ministry of Mines.
+            </p>
+
+            {/* CTA Buttons */}
+            <div className="animate-fade-up-delay-3 flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Link
+                href="/login"
+                className="group inline-flex items-center gap-2.5 px-8 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold text-base shadow-xl shadow-emerald-500/30 hover:shadow-2xl hover:shadow-emerald-500/40 hover:from-emerald-400 hover:to-teal-400 transition-all duration-200 active:scale-95 animate-pulse-glow"
+              >
+                <span>Access Your Terminal</span>
+                <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
+              </Link>
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl glass text-white font-semibold text-base hover:bg-white/15 transition-all duration-200"
+              >
+                <BarChart3 className="h-5 w-5 text-emerald-400" />
+                <span>View Live Dashboard</span>
+              </Link>
+            </div>
+
+            {/* Trust badges */}
+            <div className="animate-fade-up-delay-4 flex flex-wrap items-center justify-center gap-6 pt-4">
+              {[
+                { icon: ShieldCheck, text: "Ministry of Mines Verified" },
+                { icon: Award, text: "SIH 2024 Project" },
+                { icon: Leaf, text: "Sustainable Supply Chain" },
+              ].map(({ icon: Icon, text }) => (
+                <div key={text} className="flex items-center gap-2 text-slate-400 text-xs font-medium">
+                  <Icon className="h-4 w-4 text-emerald-400" />
+                  <span>{text}</span>
                 </div>
-                {selectedRole === "Recycler" && (
-                  <CheckCircle2 className="h-5 w-5 text-green-700" />
-                )}
-              </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-bold text-stone-900">
-                  I run a Recycling Plant
-                </h3>
-                <p className="text-xs sm:text-sm text-stone-500 mt-1 leading-relaxed">
-                  Receive and confirm scrap shipments.
-                </p>
-              </div>
+              ))}
             </div>
           </div>
+        </div>
 
-          {/* Inline Expanded Access Form */}
-          {selectedRole && (
-            <Card className="border-stone-200 bg-white shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-              <CardContent className="p-5 sm:p-6">
-                <form onSubmit={handleLogin} className="space-y-4">
-                  {/* Facility Dropdown */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center justify-between">
-                      <span>
-                        {selectedRole === "Aggregator"
-                          ? "Select your Collection Center"
-                          : "Select your Recycling Plant"}
-                      </span>
-                      {loadingFacilities && (
-                        <span className="flex items-center gap-1 text-[11px] text-stone-500 font-normal">
-                          <Loader2 className="h-3 w-3 animate-spin" /> Loading...
-                        </span>
-                      )}
-                    </label>
+        {/* Wave divider */}
+        <div className="absolute bottom-0 left-0 right-0">
+          <svg viewBox="0 0 1440 80" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-12 sm:h-20">
+            <path d="M0 80H1440V40C1200 80 960 0 720 0C480 0 240 80 0 40V80Z" fill="#f8fafc"/>
+          </svg>
+        </div>
+      </section>
 
-                    <div className="relative">
-                      <select
-                        value={selectedFacilityId}
-                        onChange={(e) => setSelectedFacilityId(e.target.value)}
-                        disabled={loadingFacilities || submitting}
-                        className="w-full bg-white border border-stone-300 hover:border-stone-400 focus:border-green-700 focus:ring-1 focus:ring-green-700 text-stone-900 rounded-lg px-3.5 py-3 text-sm font-medium outline-none transition-colors appearance-none cursor-pointer disabled:opacity-50"
-                      >
-                        {facilities.map((fac) => (
-                          <option key={fac.id} value={fac.id} className="bg-white text-stone-900 py-1">
-                            {fac.name} — {fac.location}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-stone-500">
-                        <ChevronDown className="h-4 w-4" />
+      {/* ── Stats Bar ──────────────────────────────────────────────────── */}
+      <section id="impact" className="bg-slate-50 py-12 sm:py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
+            {[
+              { label: "Tonnes Tracked", value: 12400, suffix: "+", color: "text-emerald-600", icon: Scale },
+              { label: "Registered Facilities", value: 340, suffix: "+", color: "text-teal-600", icon: Warehouse },
+              { label: "Collectors Paid (DBT)", value: 8200, suffix: "+", color: "text-blue-600", icon: Banknote },
+              { label: "Verified Dispatches", value: 51000, suffix: "+", color: "text-purple-600", icon: FileCheck },
+            ].map(({ label, value, suffix, color, icon: Icon }) => (
+              <div
+                key={label}
+                className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/80 text-center hover:shadow-md transition-shadow"
+              >
+                <div className={`flex items-center justify-center h-10 w-10 rounded-xl bg-slate-100 mx-auto mb-3`}>
+                  <Icon className={`h-5 w-5 ${color}`} />
+                </div>
+                <div className={`text-3xl sm:text-4xl font-black ${color}`}>
+                  <AnimatedCounter target={value} suffix={suffix} />
+                </div>
+                <div className="text-sm text-slate-500 font-medium mt-1">{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Features / Roles Section ───────────────────────────────────── */}
+      <section id="features" className="py-20 sm:py-28 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-14">
+            <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 border border-emerald-200 px-4 py-1.5 text-xs font-semibold text-emerald-700 mb-4">
+              <Zap className="h-3.5 w-3.5" /> Three Roles, One Platform
+            </div>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-slate-900">
+              Built for every stakeholder
+            </h2>
+            <p className="mt-4 text-lg text-slate-500 max-w-2xl mx-auto">
+              From the Kabadiwala on the street to the Ministry office — everyone has a role in the chain.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+            {/* Aggregator */}
+            <div className="group relative bg-gradient-to-br from-emerald-50 to-teal-50 rounded-3xl p-7 border border-emerald-200/60 hover:border-emerald-300 hover:shadow-xl hover:shadow-emerald-500/10 transition-all duration-300">
+              <div className="absolute top-5 right-5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <ChevronRight className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/30 mb-5">
+                <Warehouse className="h-7 w-7 text-white" />
+              </div>
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800 mb-3">
+                Aggregator
+              </div>
+              <h3 className="text-xl font-black text-slate-900 mb-3">Collection Center</h3>
+              <p className="text-slate-600 text-sm leading-relaxed mb-5">
+                Weigh incoming scrap on a certified scale, register Kabadiwala collectors for DBT payments, log metal categories, and dispatch verified batches to formal recyclers.
+              </p>
+              <ul className="space-y-2">
+                {["Scale POS Terminal", "Kabadiwala DBT Registration", "Dispatch Batching", "Inventory Ledger"].map((f) => (
+                  <li key={f} className="flex items-center gap-2 text-sm text-slate-700">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Link href="/login" className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-emerald-700 hover:text-emerald-800 transition-colors">
+                Access Terminal <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            {/* Recycler */}
+            <div className="group relative bg-gradient-to-br from-blue-50 to-indigo-50 rounded-3xl p-7 border border-blue-200/60 hover:border-blue-300 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300">
+              <div className="absolute top-5 right-5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <ChevronRight className="h-5 w-5 text-blue-600" />
+              </div>
+              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30 mb-5">
+                <Factory className="h-7 w-7 text-white" />
+              </div>
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-800 mb-3">
+                Formal Recycler
+              </div>
+              <h3 className="text-xl font-black text-slate-900 mb-3">Recycling Plant</h3>
+              <p className="text-slate-600 text-sm leading-relaxed mb-5">
+                Receive inbound consignments from Aggregator godowns, verify weight on your certified plant scale, confirm or reject custody, and maintain an immutable audit log.
+              </p>
+              <ul className="space-y-2">
+                {["Inbound Verification", "Weight Discrepancy Flags", "Custody Handshake", "Audit Decision Log"].map((f) => (
+                  <li key={f} className="flex items-center gap-2 text-sm text-slate-700">
+                    <CheckCircle2 className="h-4 w-4 text-blue-600 shrink-0" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Link href="/login" className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-800 transition-colors">
+                Access Terminal <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            {/* MoM */}
+            <div className="group relative bg-gradient-to-br from-amber-50 to-orange-50 rounded-3xl p-7 border border-amber-200/60 hover:border-amber-300 hover:shadow-xl hover:shadow-amber-500/10 transition-all duration-300">
+              <div className="absolute top-5 right-5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <ChevronRight className="h-5 w-5 text-amber-600" />
+              </div>
+              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/30 mb-5">
+                <Building2 className="h-7 w-7 text-white" />
+              </div>
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800 mb-3">
+                Ministry of Mines
+              </div>
+              <h3 className="text-xl font-black text-slate-900 mb-3">Government Dashboard</h3>
+              <p className="text-slate-600 text-sm leading-relaxed mb-5">
+                Monitor the entire critical mineral supply chain in real-time. View analytics, compliance metrics, Kabadiwala income statistics, and flag anomalies across all facilities.
+              </p>
+              <ul className="space-y-2">
+                {["Real-time Analytics", "Compliance Monitoring", "Income Statistics", "Supply Chain Visibility"].map((f) => (
+                  <li key={f} className="flex items-center gap-2 text-sm text-slate-700">
+                    <CheckCircle2 className="h-4 w-4 text-amber-600 shrink-0" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Link href="/login" className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-amber-700 hover:text-amber-800 transition-colors">
+                Access Dashboard <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── How It Works ───────────────────────────────────────────────── */}
+      <section id="how-it-works" className="py-20 sm:py-28 bg-slate-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-14">
+            <div className="inline-flex items-center gap-2 rounded-full bg-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-700 mb-4">
+              Simple. Fast. Verified.
+            </div>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-slate-900">
+              How DhatuSetu works
+            </h2>
+            <p className="mt-4 text-lg text-slate-500 max-w-xl mx-auto">
+              Four simple steps from street-level scrap to formal recycling.
+            </p>
+          </div>
+
+          <div className="relative">
+            {/* Connector line (desktop) */}
+            <div className="hidden lg:block absolute top-16 left-[12.5%] right-[12.5%] h-0.5 bg-gradient-to-r from-emerald-300 via-teal-300 to-blue-300" />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+              {[
+                {
+                  step: "01",
+                  title: "Kabadiwala Drops Off",
+                  desc: "Informal collector brings scrap to the registered Aggregator godown.",
+                  icon: Recycle,
+                  color: "from-emerald-500 to-teal-500",
+                  bg: "bg-emerald-50",
+                  border: "border-emerald-200",
+                },
+                {
+                  step: "02",
+                  title: "Weigh & Log",
+                  desc: "Aggregator weighs on a certified scale. Material category is recorded. Payment is calculated instantly.",
+                  icon: Scale,
+                  color: "from-teal-500 to-cyan-500",
+                  bg: "bg-teal-50",
+                  border: "border-teal-200",
+                },
+                {
+                  step: "03",
+                  title: "Dispatch Batch",
+                  desc: "Once aggregated, the godown dispatches a verified batch to a formal recycling plant.",
+                  icon: TrendingUp,
+                  color: "from-blue-500 to-indigo-500",
+                  bg: "bg-blue-50",
+                  border: "border-blue-200",
+                },
+                {
+                  step: "04",
+                  title: "Recycler Verifies",
+                  desc: "The plant weighs the incoming consignment, confirms custody, and the record is sealed on-chain.",
+                  icon: ShieldCheck,
+                  color: "from-purple-500 to-violet-500",
+                  bg: "bg-purple-50",
+                  border: "border-purple-200",
+                },
+              ].map(({ step, title, desc, icon: Icon, color, bg, border }) => (
+                <div key={step} className="flex flex-col items-center text-center gap-4">
+                  <div className={`relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br ${color} shadow-xl`}>
+                    <Icon className="h-7 w-7 text-white" />
+                    <div className={`absolute -top-2 -right-2 h-6 w-6 rounded-full ${bg} border-2 ${border} flex items-center justify-center`}>
+                      <span className="text-[10px] font-black text-slate-700">{step}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 mb-2">{title}</h3>
+                    <p className="text-sm text-slate-500 leading-relaxed">{desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Benefits ────────────────────────────────────────────────────── */}
+      <section className="py-20 sm:py-28 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 border border-emerald-200 px-4 py-1.5 text-xs font-semibold text-emerald-700 mb-5">
+                <Star className="h-3.5 w-3.5" /> Why DhatuSetu
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 mb-6">
+                Built for India&apos;s{" "}
+                <span className="text-emerald-600">informal economy</span>
+              </h2>
+              <p className="text-slate-600 text-base leading-relaxed mb-8">
+                Over 4 million people work in India&apos;s informal scrap sector. DhatuSetu is the first platform designed 
+                from the ground up to bridge their work into the formal economy — with dignity, transparency, and instant payment.
+              </p>
+              <div className="space-y-5">
+                {[
+                  {
+                    icon: Banknote,
+                    color: "bg-emerald-100 text-emerald-700",
+                    title: "Instant DBT Payment",
+                    desc: "Collectors get paid immediately when their scrap is weighed. No middlemen, no delays.",
+                  },
+                  {
+                    icon: FileCheck,
+                    color: "bg-blue-100 text-blue-700",
+                    title: "Verifiable Income Record",
+                    desc: "Every transaction creates a formal, GST-compatible record — enabling loans and social benefits.",
+                  },
+                  {
+                    icon: Globe,
+                    color: "bg-purple-100 text-purple-700",
+                    title: "No App Download",
+                    desc: "Works in any browser, on any device. Even low-end phones on 2G networks.",
+                  },
+                  {
+                    icon: ShieldCheck,
+                    color: "bg-amber-100 text-amber-700",
+                    title: "Ministry-Grade Security",
+                    desc: "4-digit facility PINs, role-based access, and tamper-evident audit trails.",
+                  },
+                ].map(({ icon: Icon, color, title, desc }) => (
+                  <div key={title} className="flex gap-4">
+                    <div className={`h-10 w-10 rounded-xl ${color} flex items-center justify-center shrink-0`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-900 text-sm">{title}</div>
+                      <div className="text-slate-500 text-sm mt-0.5">{desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Right card */}
+            <div className="relative">
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-100 to-teal-100 rounded-3xl transform rotate-2" />
+              <div className="relative bg-white rounded-3xl border border-slate-200 p-8 shadow-xl space-y-6">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-slate-700">Live Chain Status</span>
+                  <span className="flex items-center gap-1.5 text-xs font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    LIVE
+                  </span>
+                </div>
+                {[
+                  { label: "Karol Bagh Godown", type: "Aggregator", weight: "128 kg", material: "COPPER", status: "Dispatched", color: "text-amber-600 bg-amber-50 border-amber-200" },
+                  { label: "Dharavi Metal Co-op", type: "Aggregator", weight: "245 kg", material: "ALUMINUM", status: "Weighing", color: "text-slate-600 bg-slate-50 border-slate-200" },
+                  { label: "Hindalco Smelter", type: "Recycler", weight: "1240 kg", material: "COPPER", status: "Accepted", color: "text-emerald-600 bg-emerald-50 border-emerald-200" },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <div className="flex items-center gap-3">
+                      <div className={`h-2 w-2 rounded-full ${item.type === "Aggregator" ? "bg-emerald-500" : "bg-blue-500"}`} />
+                      <div>
+                        <div className="text-sm font-bold text-slate-900">{item.label}</div>
+                        <div className="text-xs text-slate-500">{item.type} • {item.weight}</div>
                       </div>
                     </div>
-                  </div>
-
-                  {/* 4-digit code Input */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-stone-700 uppercase tracking-wider">
-                        4-digit code
-                      </label>
-                      <span className="text-xs text-stone-400 font-mono">
-                        Demo code is 1234
-                      </span>
+                    <div className={`text-xs font-bold px-2.5 py-1 rounded-full border ${item.color}`}>
+                      {item.status}
                     </div>
-                    <Input
-                      type="password"
-                      maxLength={4}
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      placeholder="••••"
-                      value={code}
-                      onChange={(e) => {
-                        setCode(e.target.value.replace(/\D/g, "").slice(0, 4))
-                        if (errorMessage) setErrorMessage(null)
-                      }}
-                      disabled={submitting}
-                      className="h-12 text-center font-mono text-2xl tracking-[0.4em] bg-white border-stone-300 text-stone-900 focus-visible:ring-green-700 focus-visible:border-green-700 placeholder:tracking-normal placeholder:text-sm placeholder:font-sans placeholder:text-stone-400 rounded-lg"
-                    />
                   </div>
-
-                  {/* Inline Error Message */}
-                  {errorMessage && (
-                    <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs font-medium animate-in fade-in duration-200">
-                      {errorMessage}
-                    </div>
-                  )}
-
-                  {/* Continue Button */}
-                  <Button
-                    type="submit"
-                    disabled={submitting || loadingFacilities}
-                    className="w-full h-12 text-base font-bold bg-green-700 hover:bg-green-800 text-white rounded-lg shadow-sm transition-colors"
-                  >
-                    {submitting ? (
-                      <span className="flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Opening terminal...</span>
-                      </span>
-                    ) : (
-                      <span>Continue</span>
-                    )}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-          )}
-        </section>
-
-        {/* 4. Three Simple Benefit Points */}
-        <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-stone-200">
-          <div className="p-4 rounded-xl bg-white border border-stone-200 shadow-sm">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-50 border border-green-200 text-green-700 mb-3">
-              <Banknote className="h-5 w-5" />
+                ))}
+                <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+                  <span>3 active chains · 2 pending verification</span>
+                  <span className="font-mono text-emerald-600">Updated now</span>
+                </div>
+              </div>
             </div>
-            <div className="font-bold text-sm text-stone-900">
-              Get paid the moment you weigh it in
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA Banner ─────────────────────────────────────────────────── */}
+      <section className="py-20 hero-gradient relative overflow-hidden">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-0 left-1/4 w-64 h-64 rounded-full bg-emerald-500/10 blur-3xl" />
+          <div className="absolute bottom-0 right-1/4 w-64 h-64 rounded-full bg-teal-500/10 blur-3xl" />
+        </div>
+        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-7">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight">
+            Ready to access your terminal?
+          </h2>
+          <p className="text-slate-300 text-lg max-w-xl mx-auto">
+            Sign in with your role and facility code to get started.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              href="/login"
+              className="group inline-flex items-center gap-2.5 px-8 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold text-base shadow-xl hover:shadow-2xl transition-all duration-200 active:scale-95"
+            >
+              Sign In Now
+              <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
+            </Link>
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl glass text-white font-semibold text-base hover:bg-white/15 transition-all duration-200"
+            >
+              <BarChart3 className="h-5 w-5 text-emerald-400" />
+              MoM Dashboard
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Footer ─────────────────────────────────────────────────────── */}
+      <footer className="bg-slate-900 text-slate-400">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
+            {/* Brand */}
+            <div className="md:col-span-2">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700">
+                  <Recycle className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <span className="text-lg font-black text-white tracking-tight">
+                    Dhatu<span className="text-emerald-400">Setu</span>
+                  </span>
+                  <div className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Ministry of Mines</div>
+                </div>
+              </div>
+              <p className="text-sm leading-relaxed text-slate-500 max-w-xs">
+                Critical Mineral Traceability Network — connecting informal scrap collectors to India&apos;s formal recycling economy.
+              </p>
             </div>
-            <div className="text-xs text-stone-500 mt-1">
-              Immediate calculation and verified scale slips on spot.
+
+            {/* Platform */}
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-widest text-slate-300 mb-4">Platform</h4>
+              <ul className="space-y-2.5 text-sm">
+                {["Aggregator Terminal", "Recycler Portal", "MoM Dashboard", "Inventory"].map((l) => (
+                  <li key={l}>
+                    <Link href="/login" className="hover:text-emerald-400 transition-colors">{l}</Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Government */}
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-widest text-slate-300 mb-4">Government</h4>
+              <ul className="space-y-2.5 text-sm">
+                {["Ministry of Mines", "CMTN Policy", "DBT Framework", "Compliance"].map((l) => (
+                  <li key={l}>
+                    <span className="hover:text-emerald-400 transition-colors cursor-default">{l}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-white border border-stone-200 shadow-sm">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 border border-amber-200 text-amber-700 mb-3">
-              <FileCheck className="h-5 w-5" />
-            </div>
-            <div className="font-bold text-sm text-stone-900">
-              Build a record that can help you get a loan later
-            </div>
-            <div className="text-xs text-stone-500 mt-1">
-              Formal transactions create verifiable proof of income.
-            </div>
+          <div className="border-t border-slate-800 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-600">
+            <span>© 2024 Dhatu Setu · Government of India, Ministry of Mines · Critical Mineral Traceability Network</span>
+            <span className="font-mono text-emerald-700">SIH 2024 · CMTN v1.0</span>
           </div>
-
-          <div className="p-4 rounded-xl bg-white border border-stone-200 shadow-sm">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 border border-slate-200 text-slate-700 mb-3">
-              <Globe className="h-5 w-5" />
-            </div>
-            <div className="font-bold text-sm text-stone-900">
-              No app to download — works right in the browser
-            </div>
-            <div className="text-xs text-stone-500 mt-1">
-              Ready instantly on any mobile phone, tablet, or PC.
-            </div>
-          </div>
-        </section>
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-stone-200 bg-white px-4 py-3 text-center text-xs text-stone-500 mt-auto">
-        Dhatu Setu • Government of India, Ministry of Mines
+        </div>
       </footer>
     </div>
   )

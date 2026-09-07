@@ -1,4 +1,4 @@
-export type UserRole = 'Aggregator' | 'Recycler'
+export type UserRole = 'Aggregator' | 'Recycler' | 'MoM'
 
 export interface UserSession {
   facilityId: string

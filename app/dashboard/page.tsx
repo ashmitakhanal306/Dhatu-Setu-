@@ -655,6 +655,16 @@ export default function MoMDashboardPage() {
             </CardHeader>
 
             <CardContent className="p-4 sm:p-6">
+              {facilityMap.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+                  <MapPin className="h-10 w-10 text-stone-300" />
+                  <div className="text-sm font-semibold text-stone-500">No facility coordinates loaded</div>
+                  <p className="text-xs text-stone-400 max-w-xs">
+                    Run <code className="bg-stone-100 px-1 rounded text-stone-700">supabase/add_coordinates.sql</code> in your Supabase SQL editor to seed facility lat/lon data and enable the map.
+                  </p>
+                </div>
+              ) : (
+                <>
               {/* Map container — relative so tooltip can be absolutely positioned */}
               <div className="relative w-full select-none" style={{ paddingBottom: "62%" }}>
                 {/* ── India SVG outline ── */}
@@ -730,17 +740,22 @@ export default function MoMDashboardPage() {
                       <g key={f.id}
                         style={{ cursor: "pointer" }}
                         onMouseEnter={(e) => {
-                          const svg = (e.currentTarget as SVGGElement).closest("svg")
-                          const rect = svg?.getBoundingClientRect()
-                          const container = svg?.parentElement?.getBoundingClientRect()
-                          if (!rect || !container) return
-                          const scaleX = rect.width / 600
-                          const scaleY = rect.height / 370
-                          setMapTooltip({
-                            facility: f,
-                            x: cx * scaleX,
-                            y: cy * scaleY,
-                          })
+                          try {
+                            const svgEl = (e.currentTarget as SVGGElement).closest("svg") as SVGSVGElement | null
+                            if (!svgEl) return
+                            const rect = svgEl.getBoundingClientRect()
+                            const container = svgEl.parentElement?.getBoundingClientRect()
+                            if (!rect || !container) return
+                            const scaleX = rect.width / 600
+                            const scaleY = rect.height / 370
+                            setMapTooltip({
+                              facility: f,
+                              x: cx * scaleX,
+                              y: cy * scaleY,
+                            })
+                          } catch {
+                            // silently ignore tooltip positioning errors
+                          }
                         }}
                         onMouseLeave={() => setMapTooltip(null)}
                       >
@@ -809,6 +824,8 @@ export default function MoMDashboardPage() {
                   </div>
                 ))}
               </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </section>

@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/components/ui/toast"
-import { supabase, type MaterialCode } from "@/lib/supabase"
+import { supabase, type MaterialCode, type Facility } from "@/lib/supabase"
 import {
   Phone,
   Scale,
@@ -24,6 +24,9 @@ import {
   Zap,
   Package,
   Cpu,
+  Truck,
+  ChevronDown,
+  Send,
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -82,6 +85,15 @@ export default function AggregatorPOSPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
+  // ── Dispatch state ───────────────────────────────────────────────────
+  const [recyclers, setRecyclers] = useState<Facility[]>([])
+  const [loadingRecyclers, setLoadingRecyclers] = useState(true)
+  const [dispatchRecyclerId, setDispatchRecyclerId] = useState("")
+  const [dispatchMaterial, setDispatchMaterial] = useState<MaterialCode>("COPPER")
+  const [dispatchWeight, setDispatchWeight] = useState("")
+  const [isDispatching, setIsDispatching] = useState(false)
+  const [dispatchError, setDispatchError] = useState<string | null>(null)
+
   // Fetch current rates from DB and merge into MATERIALS_BASE
   const fetchRates = useCallback(async () => {
     const { data, error } = await supabase
@@ -132,6 +144,69 @@ export default function AggregatorPOSPage() {
       supabase.removeChannel(channel)
     }
   }, [fetchRates])
+
+  // Load formal recyclers for the dispatch dropdown
+  useEffect(() => {
+    async function loadRecyclers() {
+      setLoadingRecyclers(true)
+      const { data, error } = await supabase
+        .from("facilities")
+        .select("id, name, location, type, pin")
+        .eq("type", "Formal Recycler")
+        .order("name")
+      if (!error && data && data.length > 0) {
+        setRecyclers(data as Facility[])
+        setDispatchRecyclerId((data as Facility[])[0].id)
+      } else {
+        // Demo fallback
+        const demo: Facility[] = [
+          { id: "rec-001", name: "National E-Waste Corp", location: "Sriperumbudur, Tamil Nadu", type: "Formal Recycler", pin: "1234" },
+          { id: "rec-002", name: "Hindalco Metals", location: "Dahej, Gujarat", type: "Formal Recycler", pin: "1234" },
+          { id: "rec-003", name: "Bharat Copper Ltd", location: "Khetri, Rajasthan", type: "Formal Recycler", pin: "1234" },
+        ]
+        setRecyclers(demo)
+        setDispatchRecyclerId(demo[0].id)
+      }
+      setLoadingRecyclers(false)
+    }
+    loadRecyclers()
+  }, [])
+
+  const handleDispatch = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setDispatchError(null)
+    const w = parseFloat(dispatchWeight)
+    if (!dispatchRecyclerId) { setDispatchError("Select a recycler."); return }
+    if (isNaN(w) || w <= 0) { setDispatchError("Enter a valid weight > 0."); return }
+
+    const activeSession = getSession()
+    const aggregatorId = activeSession?.facilityId || session?.facilityId
+    if (!aggregatorId) { setDispatchError("No active session. Please log in again."); return }
+
+    setIsDispatching(true)
+    try {
+      const { error } = await supabase.from("dispatches").insert({
+        aggregator_id: aggregatorId,
+        recycler_id: dispatchRecyclerId,
+        material_code: dispatchMaterial,
+        weight_kg: w,
+        status: "PENDING",
+      })
+      if (error) throw error
+      toast({
+        title: "✅ Dispatch Sent",
+        description: `${w} kg of ${dispatchMaterial} dispatched. Awaiting recycler confirmation.`,
+        type: "success",
+      })
+      setDispatchWeight("")
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Dispatch failed"
+      setDispatchError(msg)
+      toast({ title: "Dispatch Error", description: msg, type: "error" })
+    } finally {
+      setIsDispatching(false)
+    }
+  }
   const [recentSms, setRecentSms] = useState<{
     phone: string
     weight: string
@@ -567,6 +642,117 @@ export default function AggregatorPOSPage() {
             </div>
           </div>
         )}
+
+        {/* ── Section 7: Dispatch to Recycler ──────────────────────── */}
+        <div className="mt-10 pt-8 border-t-2 border-dashed border-stone-300">
+          <div className="mb-5 flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100 border border-blue-200 text-blue-700">
+              <Truck className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight text-stone-900 uppercase">
+                Dispatch Batch to Recycler
+              </h2>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Send a verified batch from your godown to a formal recycling plant.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleDispatch} className="space-y-4">
+            {/* Recycler dropdown */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold uppercase tracking-wider text-stone-700 flex items-center justify-between">
+                <span>Target Recycling Plant</span>
+                {loadingRecyclers && (
+                  <span className="flex items-center gap-1 text-[11px] text-stone-400 font-normal">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Loading...
+                  </span>
+                )}
+              </label>
+              <div className="relative">
+                <select
+                  value={dispatchRecyclerId}
+                  onChange={(e) => setDispatchRecyclerId(e.target.value)}
+                  disabled={loadingRecyclers || isDispatching}
+                  className="w-full appearance-none bg-white border-2 border-stone-300 hover:border-stone-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 text-stone-900 rounded-xl px-4 py-3.5 text-sm font-medium outline-none transition-all cursor-pointer disabled:opacity-60"
+                >
+                  {recyclers.map((r) => (
+                    <option key={r.id} value={r.id} className="bg-white">
+                      {r.name} — {r.location}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-stone-400">
+                  <ChevronDown className="h-4 w-4" />
+                </div>
+              </div>
+            </div>
+
+            {/* Material + Weight side-by-side */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-stone-700">Material</label>
+                <div className="relative">
+                  <select
+                    value={dispatchMaterial}
+                    onChange={(e) => setDispatchMaterial(e.target.value as MaterialCode)}
+                    disabled={isDispatching}
+                    className="w-full appearance-none bg-white border-2 border-stone-300 hover:border-stone-400 focus:border-blue-600 text-stone-900 rounded-xl px-4 py-3.5 text-sm font-medium outline-none transition-all cursor-pointer disabled:opacity-60"
+                  >
+                    <option value="COPPER">Copper</option>
+                    <option value="ALUMINUM">Aluminum</option>
+                    <option value="EWASTE">E-Waste</option>
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-stone-400">
+                    <ChevronDown className="h-4 w-4" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-stone-700">Batch Weight (kg)</label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    placeholder="0.0"
+                    value={dispatchWeight}
+                    onChange={(e) => {
+                      setDispatchWeight(e.target.value)
+                      if (dispatchError) setDispatchError(null)
+                    }}
+                    disabled={isDispatching}
+                    className="h-14 pl-4 pr-14 text-xl font-mono font-bold bg-white border-2 border-stone-300 focus-visible:border-blue-600 rounded-xl text-stone-900 placeholder:text-stone-400"
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 font-mono font-bold text-sm text-stone-600 bg-stone-100 px-2 py-1 rounded border border-stone-200 pointer-events-none">kg</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Error */}
+            {dispatchError && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm">
+                <AlertCircle className="h-4 w-4 shrink-0 text-red-500" />
+                <span>{dispatchError}</span>
+              </div>
+            )}
+
+            {/* Submit */}
+            <Button
+              type="submit"
+              disabled={isDispatching || loadingRecyclers || !dispatchWeight}
+              className="w-full h-14 text-base font-black tracking-wide uppercase rounded-2xl bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40 shadow-sm transition-all active:scale-[0.99] border-0 gap-3"
+            >
+              {isDispatching ? (
+                <><Loader2 className="h-5 w-5 animate-spin" /> Dispatching...</>
+              ) : (
+                <><Send className="h-5 w-5" /> Dispatch to Recycler</>
+              )}
+            </Button>
+          </form>
+        </div>
       </main>
 
       {/* Footer / Quick Reference */}
